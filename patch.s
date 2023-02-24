@@ -90,14 +90,14 @@ FREE_OFFSET = $80000
 ; After the upper part of the screen info text is copied, copy ours
 	ORG $108E
 ; Original code in batrider:
-;	trap    #$9                                         4E49
-;	jsr     $7940.l                                     4EB9 0000 7940
-;	jsr     $12640.l                                    4EB9 0001 2640
-;	trap    #$4                                         4E44
-;	rts                                                 4E75
+;	trap #$9											4E49
+;	jsr $7940.l											4EB9 0000 7940
+;	jsr $12640.l										4EB9 0001 2640
+;	trap #$4											4E44
+;	rts													4E75
 	jmp custom_values_display	;						4EF9 000525D0
 	dc.w 0						;						0000
-	jsr $00012640				;					    4EB9 0001 2640
+	jsr $00012640				;						4EB9 0001 2640
 	trap #4						;						4E44
 	rts							;						4E75	
 
@@ -218,12 +218,13 @@ custom_values_display:
 ; then the remainder
 rank_display:
 	lea ($200648),a5
-	move.w #$C400,d0 ; Set pallete color: C4 (light blue)
+	move.w #$C400,d0		; Set pallete color in the upper byte: C4 (light blue)
 	clr.l d1
-	move.l ($20F9D0),d1 
+	move.l ($20F9D0),d1 	; Overall rank value
 	jsr write_asciihex_to_txt
 	clr.l d1
-	move.l ($20F9D4),d1
+	move.b ($203400),d1		; Credits remaining
+	add.l ($20F9D4),d1		; Rank per-frame increment = Rank frame + Credits remaining
 	lea ($200046),a5
 	jsr write_ascii_to_txt
 ; Calculate rank percentage
@@ -324,7 +325,7 @@ start_rank_adj:
 	bpl rank_pos
 	neg.l d1
 	move.w #$CC00,d0
-rank_pos:       
+rank_pos:
 	cmp.l ($100D82), d1
 	bne clear_rank_digits
 	move.w ($100D86),d0
@@ -345,7 +346,7 @@ clear_rank_digits:
 	beq clear_rank_rts
 	move.l d1,($100D82)
 	move.w d0, ($100D86)
-       ; clr.w ($100D88)
+;	clr.w ($100D88)
 	jsr write_asciihex_to_txt
 clear_rank_rts:
 	rts
