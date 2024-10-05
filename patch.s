@@ -2,6 +2,23 @@
 	PADDING OFF
 	ORG	$000000
 	BINCLUDE "original_combined_batrider.bin"
+	
+	
+; NOTES ABOUT CNT DISPLAY:
+; CNT??” display
+; 	When you reach the title screen while holding {1S + 2S}, the words "CNT??" will be added to the bottom left of the title screen.
+; 	The "??" part of "CNT??" is a hexadecimal number.
+; 	This number affects the difficulty level when you start the game.
+; 	The larger it is, the easier the difficulty level is.
+; 	Note that when this is "00", it is actually 0x100.
+; 	Normally, "??" starts from "C0", +2 is added each time demo play ends, +[finished stage number] is added each time the game is over, +2 is added each time all are cleared, and "FF" is added. If it exceeds, it is fixed at "00".
+; Fix “CNT??” to “CNT00” from the beginning
+; 	If {S} is on when the power is turned on, it will always be fixed to "00".
+; 	(Accurately, it is determined by the on state of {S} at the moment when the black screen of "ROM RAM CHECK" starts)
+; 	Also, when selecting "GAME MODE" from test mode and transitioning to game mode, the button used to select that item will also change.
+; 	If "GAME MODE" is set to {A}, same as normal.
+; 	If "GAME MODE" is determined by {S}, it is fixed to "00".
+; 	(Accurately, this is also determined by the on state of {S} at the moment when the black screen of "ROM RAM CHECK" starts immediately after exiting test mode)
 
 
 ; #$07FF => inmediate hex value (constant)
@@ -87,6 +104,16 @@ FREE_OFFSET = $80000
 ; 40 chars in total heigh (width in yoko) for 320px:  1 char is 8px heigh  but seems like there is an offset top and bottom of the screen (like half-char-wide at top and half-char-wide at bottom)
 
 
+; linef opcode 1111 dispatch custom routine:
+	ORG $2C
+	dc.l linef_dispatch_z
+
+
+; This jumps to custom code for Start+ABC quick restart
+	ORG $8C0
+	jmp quick_reset 
+	
+
 ; After the upper part of the screen info text is copied, copy ours
 	ORG $108E
 ; Original code in batrider:
@@ -103,7 +130,7 @@ FREE_OFFSET = $80000
 
 ; At $1AAC: sets the base multiplier for rank.
 ; If start is pressed it takes the value stored at: $1AC0 (value of 100)
-; If not, it takes the value at: $1ABE (value of C0). Replace this to 100 to simulate starting with start button
+; If not, it takes the value at: $1ABE (value of C0). Replace this to 100 to simulate starting with start button (easier)
 	ORG $1ABE
 	dc.w $0100
 
@@ -132,6 +159,31 @@ copy_to_txtmem_tail:
 	jsr $12640
 	trap #4
 	rts
+
+; Reset when P1 start+ABC is pressed
+; TODO also when P2 is pressed?
+quick_reset:
+	move.b ($101679),d1
+	andi.b #$F0,d1
+	cmpi.b #$F0,d1
+	beq return_to_copyright_main
+	move.b ($101771), d1
+	andi.b #$F0,d1
+	cmpi.b #$F0,d1
+	beq return_to_copyright_main
+	jsr $984	; really needed ??
+	jsr $9AC	; really needed ??
+	jmp $8C8	; going back to address caller
+return_to_copyright_main:
+	jmp $2CA	; go to copyright screen position
+	dc.b 0
+	dc.b $FF
+
+
+
+; insert dc.b 0 dc.b $FF to complete a 0 position
+
+
 
 ; Convert a number to base-10 ASCII and write it to text ram
 ; IN
@@ -254,14 +306,14 @@ rank_display:
 	swap d4					; restore decimal value from d4, previosly lost in d1...
 	move.w d4,d1 			; ...and set it again to d1
 	move.w #$C42E,(a5)		; write directly a dot character ($2E) with light blue palette ($C4)
-	lea $80(a5), a5			; increases one row the cursor position after writting the dot (+ $80) as the dot was not written by the subroutine
+	lea $80(a5), a5			; increases one row the cursor position after writting the dot (+ $80) as the dot symbol was not written by the subroutine
 	jsr write_ascii_to_txt	; write only decimal part of the percentaje value
 	move.w #$C425,(a5)		; write directly a percentaje character ($25) with light blue palette ($C4)
-	lea $80(a5),a5			; increases one row the cursor position after writting the percentaje (+ $80) as the dot was not written by the subroutine
-	move.w #$0000,(a5)		; write directly an "empty" character ($00) with "trassparent" palette ($00)
-	lea $80(a5),a5			; increases one row the cursor position after writting the "empty" (+ $80) as the dot was not written by the subroutine
-	move.w #$0000,(a5)		; write directly another "empty" character ($00) with "trassparent" palette ($00)
-	move.l ($100D92),d1
+	lea $80(a5),a5			; increases one row the cursor position after writting the percentaje (+ $80) as the percentaje symbol was not written by the subroutine
+	move.w #$0000,(a5)		; write directly an "empty" character ($00) with "transparent" palette ($00)
+	lea $80(a5),a5			; increases one row the cursor position after writting the "empty" (+ $80) as the empty symbol was not written by the subroutine
+	move.w #$0000,(a5)		; write directly another "empty" character ($00) with "transparent" palette ($00)
+	move.l ($100D92),d1		; Save into D1 the value stored at ($100D92) (to be used later in rank adjust ??)
 	jsr write_rank_adjust  
 custom_values_end:
 	jmp copy_to_txtmem_tail
@@ -285,8 +337,8 @@ calculate_min_rank:
 
 
 rank_adjust_z:
-	andi.l #$30000,d7
-	bne sub_rank_adj
+	andi.l #$30000,d7		; Perform: D7 = D7 & $30000
+	bne sub_rank_adj		
 	add.l d0, ($100D92)
 	clr.w ($100D88)
 sub_rank_adj:
@@ -309,15 +361,16 @@ rank_adjust_rts:
 real_adj_rts:
 	rts
 
+
+
 write_rank_adjust:
-	move.l ($100D92),d1
-	clr.l ($100D92)
+	move.l ($100D92),d1			; 
+	clr.l ($100D92)				
 	tst.l d1
 	bne rank_write_not_zero
 	rts
 rank_write_not_zero:
 	lea ($200646),a5
-start_rank_adj:
 	cmp.l #$FFFFFFFF,d1
 	beq clear_rank_digits
 	move.w #$C400,d0
@@ -326,7 +379,7 @@ start_rank_adj:
 	neg.l d1
 	move.w #$CC00,d0
 rank_pos:
-	cmp.l ($100D82), d1
+	cmp.l ($100D82), d1			; $100D82 position where rank adjust is stored
 	bne clear_rank_digits
 	move.w ($100D86),d0
 	eor.w #$C00,d0
